@@ -6,15 +6,17 @@ defmodule EventstoreShowcase.UserModification do
     alias EventstoreShowcase.User
 
     @required ~w(user_id name)a
+    @optional ~w(version)a
     embedded_schema do
       field :user_id, :binary
       field :name, :string
+      field :version, :integer, default: 0
     end
 
     def build(params) do
       changeset =
         %__MODULE__{}
-        |> cast(params, @required)
+        |> cast(params, @required ++ @optional)
         |> validate_required(@required)
 
       case changeset.valid? do
@@ -29,25 +31,25 @@ defmodule EventstoreShowcase.UserModification do
           {:error, :not_found}
 
         user ->
-          {:ok, user}
+          {:ok, %{command | version: user.version}}
       end
     end
 
     def new(params) do
-      with {:ok, command} <- build(params),
-           {:ok, user} <- check_user(command) do
-        {:ok, %{command: command, user: user}}
+      with {:ok, command} <- build(params) do
+        check_user(command)
       end
     end
   end
 
   defmodule Event do
-    defstruct [:id, :name]
+    defstruct [:id, :name, :version]
 
     def from_command(command) do
       %__MODULE__{
         id: command.id,
-        name: command.name
+        name: command.name,
+        version: command.version
       }
     end
   end

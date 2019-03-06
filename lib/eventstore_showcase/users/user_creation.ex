@@ -52,12 +52,13 @@ defmodule EventstoreShowcase.UserCreation do
   end
 
   defmodule Event do
-    defstruct [:id, :name]
+    defstruct [:id, :name, :version]
 
     def from_command(command) do
       %__MODULE__{
         id: command.id,
-        name: command.name
+        name: command.name,
+        version: 0
       }
     end
   end
