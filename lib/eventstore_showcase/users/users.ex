@@ -1,76 +1,79 @@
 defmodule EventstoreShowcase.Users do
+  alias Ecto.Multi
+
   alias EventstoreShowcase.{
     Repo,
-    User,
-    UserCreated,
-    UserModified
+    User
   }
 
   def create_user(params) do
-    params
-    |> User.create_user()
-    |> Repo.insert()
-    |> generate_event(:user_created)
-    |> append_to_stream
+    Multi.new()
+    |> build_command(:create, params)
+    |> authorize()
+    |> handle_command()
+    |> run_projections()
+    |> audit_event()
+    |> execute()
+    |> emit_event()
+    |> return(:user)
   end
 
-  def modify_user(user, params) do
-    user
-    |> User.modify_user(params)
-    |> Repo.update()
-    |> generate_event(:user_modified)
-    |> append_to_stream
+  def modify_user(params) do
+    Multi.new()
+    |> build_command(:modify, params)
+    |> authorize()
+    |> handle_command()
+    |> run_projections()
+    |> audit_event()
+    |> execute()
+    |> emit_event()
+    |> return(:user)
   end
 
-  def generate_event({:ok, user}, :user_created),
-    do: %UserCreated{
-      id: user.id,
-      name: user.name
-    }
-
-  def generate_event({:ok, user}, :user_modified),
-    do: %UserModified{
-      id: user.id,
-      name: user.name
-    }
-
-  def generate_event({:error, changeset}, _) do
-    Ecto.Changeset.traverse_errors(changeset, fn {msg, opts} ->
-      Enum.reduce(opts, msg, fn {key, value}, acc ->
-        String.replace(acc, "%{#{key}}", to_string(value))
-      end)
+  def build_command(multi, :create, params) do
+    Multi.run(multi, :command, fn _, _ ->
+      EventstoreShowcase.UserCreation.Cmd.new(params)
     end)
   end
 
-  def append_to_stream(%UserCreated{id: user_id} = event) do
-    # A new stream will be created when the expected version is zero.
-    expected_version = 0
-
-    events = [
-      %EventStore.EventData{
-        event_type: Atom.to_string(event.__struct__),
-        data: event,
-        metadata: "user_event"
-      }
-    ]
-
-    EventStore.append_to_stream(user_id, expected_version, events)
+  def build_command(multi, :modify, params) do
+    Multi.run(multi, :command, fn _, _ ->
+      EventstoreShowcase.UserModification.Cmd.new(params)
+    end)
   end
 
-  def append_to_stream(%UserModified{id: user_id} = event) do
-    stream_version =
-      user_id
-      |> EventStore.stream_forward()
-      |> Enum.to_list()
-      |> length
+  def authorize(multi), do: multi
+  def audit_event(multi), do: multi
+  def emit_event(multi), do: multi
 
-    events = [
-      %EventStore.EventData{
-        event_type: Atom.to_string(event.__struct__),
-        data: event
-      }
-    ]
+  def handle_command(multi) do
+    Multi.run(multi, :event, fn _, %{command: cmd} ->
+      event = EventstoreShowcase.UserCreation.Event.from_command(cmd)
 
-    EventStore.append_to_stream(user_id, stream_version, events)
+      expected_version = 0
+
+      events = [
+        %EventStore.EventData{
+          event_type: Atom.to_string(event.__struct__),
+          data: event,
+          metadata: "user_event"
+        }
+      ]
+
+      with :ok <- EventStore.append_to_stream(event.id, expected_version, events) do
+        {:ok, event}
+      end
+    end)
   end
+
+  def run_projections(multi) do
+    Multi.insert(multi, :user, fn %{event: event} ->
+      User.create_user(event)
+    end)
+  end
+
+  def return({:ok, result}, key), do: Map.get(result, key)
+  def return(any, _key), do: any
+
+  def execute(multi), do: Repo.transaction(multi)
 end

@@ -5,6 +5,7 @@ defmodule EventstoreShowcase.Repo.Migrations.CreateUsers do
     create table(:users, primary_key: false) do
       add :id, :binary_id, primary_key: true
       add :name, :string
+      add :version, :integer
 
       timestamps()
     end

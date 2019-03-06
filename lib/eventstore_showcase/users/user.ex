@@ -6,6 +6,7 @@ defmodule EventstoreShowcase.User do
 
   schema "users" do
     field :name, :string
+    field :version, :integer
 
     timestamps()
   end
@@ -17,11 +18,19 @@ defmodule EventstoreShowcase.User do
     |> validate_required([:name])
   end
 
-  def create_user(attrs) do
-    changeset(%__MODULE__{}, attrs)
+  def create_user(event) do
+    %__MODULE__{
+      id: event.id,
+      name: event.name,
+      version: 0
+    }
   end
 
-  def modify_user(user, attrs) do
-    changeset(%__MODULE__{id: user.id}, attrs)
+  def modify_user(event, version) do
+    %__MODULE__{
+      id: event.user_id,
+      name: event.name,
+      version: version
+    }
   end
 end

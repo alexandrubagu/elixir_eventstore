@@ -11,7 +11,7 @@ defmodule EventstoreShowcase.AuthorSubscriber do
     end
 
     {:ok, subscription} =
-      EventStore.subscribe_to_all_streams(Ecto.UUID.generate(), self(), selector: selector)
+      EventStore.subscribe_to_all_streams("author_subscriber", self(), selector: selector)
 
     {:ok, %{subscription: subscription}}
   end
@@ -24,8 +24,15 @@ defmodule EventstoreShowcase.AuthorSubscriber do
   # Event notification
   def handle_info({:events, events}, %{subscription: subscription} = state) do
     # confirm receipt of received events
-    EventStore.ack(subscription, events)
-    Enum.each(events, &EventstoreShowcase.Authors.create_author(&1.data))
+    IO.inspect(events)
+
+    # Enum.each(events, fn
+    #   e ->
+    #     EventstoreShowcase.Authors.create_author(event.data)
+
+    #   {_event, false} ->
+    #     nil
+    # end)
 
     {:noreply, state}
   end
